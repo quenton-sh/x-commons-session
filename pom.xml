@@ -5,13 +5,14 @@
 
 	<groupId>x.commons</groupId>
 	<artifactId>x-commons-session</artifactId>
-	<version>1.1-SNAPSHOT</version>
+	<version>1.1</version>
 	<packaging>jar</packaging>
 
 	<scm>
 		<connection>scm:git:https://github.com/quenton-sh/x-commons-session.git</connection>
 		<developerConnection>scm:git:https://github.com/quenton-sh/x-commons-session.git</developerConnection>
-	</scm>
+	  <tag>1.1</tag>
+  </scm>
 
 	<properties>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

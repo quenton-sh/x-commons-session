@@ -1,5 +1,8 @@
 package x.commons.session.impl;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
@@ -14,14 +17,19 @@ import x.commons.session.SessionSerializer;
 public class MemcachedSessionManagerFactory<T extends Session> implements
 		SessionManagerFactory<T> {
 
-	private int expireSecs = 15 * 60; // 默认过期时间:15分钟
+	private int defaultSessionTimeout = 900; // 默认会话有效期：15分钟
+	private Map<Integer, Integer> sessionTimeout = new HashMap<Integer, Integer>();
 	private MemcachedClient memcachedClient;
 	private SessionSerializer<T> sessionSerializer;
 	private SessionDeserializer<T> sessionDeserializer;
 	private byte[] desKey = null;
 
-	public void setExpireSecs(int expireSecs) {
-		this.expireSecs = expireSecs;
+	public void setDefaultSessionTimeout(int secs) {
+		this.defaultSessionTimeout = secs;
+	}
+
+	public void setSessionTimeout(Map<Integer, Integer> timeoutsForType) {
+		this.sessionTimeout = timeoutsForType;
 	}
 
 	public void setMemcachedClient(MemcachedClient memcachedClient) {
@@ -36,7 +44,7 @@ public class MemcachedSessionManagerFactory<T extends Session> implements
 			SessionDeserializer<T> sessionDeserializer) {
 		this.sessionDeserializer = sessionDeserializer;
 	}
-	
+
 	public void setDesKey(String desKeyHex) throws DecoderException {
 		this.desKey = Hex.decodeHex(desKeyHex.toCharArray());
 	}
@@ -56,7 +64,8 @@ public class MemcachedSessionManagerFactory<T extends Session> implements
 		}
 
 		DefaultSessionManager<T> sessionManager = new DefaultSessionManager<T>();
-		sessionManager.setExpireSecs(expireSecs);
+		sessionManager.setDefaultSessionTimeout(defaultSessionTimeout);
+		sessionManager.setSessionTimeout(sessionTimeout);
 		sessionManager.setSessionIDGenerator(sessionIDGenerator);
 		sessionManager.setSessionStore(sessionStore);
 		return sessionManager;

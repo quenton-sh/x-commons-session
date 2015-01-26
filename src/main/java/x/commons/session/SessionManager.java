@@ -4,13 +4,13 @@ public interface SessionManager<T extends Session> {
 
 	public String createSession(T sessionObj, int type) throws Exception;
 
-	public boolean updateSession(T sessionObj, int type) throws Exception;
-
-	public T validateSession(String sid, int type) throws Exception;
-	
 	public String createSession(T sessionObj) throws Exception;
 
+	public boolean updateSession(T sessionObj, int type) throws Exception;
+
 	public boolean updateSession(T sessionObj) throws Exception;
+
+	public T validateSession(String sid, int type) throws Exception;
 
 	public T validateSession(String sid) throws Exception;
 

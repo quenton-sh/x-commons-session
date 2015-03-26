@@ -10,44 +10,51 @@ import x.commons.util.HashUtils;
 import x.commons.util.security.DESUtils;
 
 public class DefaultSessionIDGenerator implements SessionIDGenerator {
-	
+
 	private static final String ENCODING = "UTF-8";
 	private byte[] desKey;
-	
+
 	public DefaultSessionIDGenerator() {
 		this.desKey = DESUtils.generateKey();
 	}
-	
+
 	public DefaultSessionIDGenerator(byte[] desKey) {
 		this.desKey = desKey;
 	}
 
 	@Override
-	public String generate() throws Exception {
-		String raw = UUID.randomUUID().toString().replace("-", "");
-		byte[] hash = HashUtils.md5(raw.getBytes(ENCODING));
-		byte[] hashCipher = DESUtils.encrypt(hash, desKey);
-		String hashCipherStr = Hex.encodeHexString(hashCipher);
-		return hashCipherStr.substring(0, 16) 
-				+ raw
-				+ hashCipherStr.substring(16, hashCipherStr.length());
-	}
-	
-	@Override
-	public boolean verify(String sid) throws Exception {
-		if (sid == null || sid.length() != 80) {
-			return false;
-		}
-		String raw = sid.substring(16, 48);
-		String hashCipherStr = sid.substring(0, 16) + sid.substring(48);
-		byte[] hashCipher = Hex.decodeHex(hashCipherStr.toCharArray());
-		byte[] hash;
+	public String generate() {
 		try {
-			hash = DESUtils.decrypt(hashCipher, desKey);
+			String raw = UUID.randomUUID().toString().replace("-", "");
+			byte[] hash = HashUtils.md5(raw.getBytes(ENCODING));
+			byte[] hashCipher = DESUtils.encrypt(hash, desKey);
+			String hashCipherStr = Hex.encodeHexString(hashCipher);
+			return hashCipherStr.substring(0, 16) + raw
+					+ hashCipherStr.substring(16, hashCipherStr.length());
 		} catch (Exception e) {
-			return false;
+			throw new SessionIDException(e);
 		}
-		byte[] rawHash = HashUtils.md5(raw.getBytes(ENCODING));
-		return Arrays.equals(hash, rawHash);
+	}
+
+	@Override
+	public boolean verify(String sid) {
+		try {
+			if (sid == null || sid.length() != 80) {
+				return false;
+			}
+			String raw = sid.substring(16, 48);
+			String hashCipherStr = sid.substring(0, 16) + sid.substring(48);
+			byte[] hashCipher = Hex.decodeHex(hashCipherStr.toCharArray());
+			byte[] hash;
+			try {
+				hash = DESUtils.decrypt(hashCipher, desKey);
+			} catch (Exception e) {
+				return false;
+			}
+			byte[] rawHash = HashUtils.md5(raw.getBytes(ENCODING));
+			return Arrays.equals(hash, rawHash);
+		} catch (Exception e) {
+			throw new SessionIDException(e);
+		}
 	}
 }

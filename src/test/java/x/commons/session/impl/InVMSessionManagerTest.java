@@ -3,13 +3,11 @@ package x.commons.session.impl;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-import java.util.HashMap;
-import java.util.Map;
-
 import org.junit.BeforeClass;
 import org.junit.Test;
 
 import x.commons.session.Session;
+import x.commons.session.SessionConfig;
 import x.commons.session.SessionManager;
 
 public class InVMSessionManagerTest {
@@ -27,12 +25,11 @@ public class InVMSessionManagerTest {
 	@BeforeClass
 	public static void init() {
 		factory = new InVMSessionManagerFactory<Session>();
-		factory.setDefaultSessionTimeout(defaultSessionTimeout);
-		
-		Map<Integer, Integer> timeouts = new HashMap<Integer, Integer>();
-		timeouts.put(type1, sessionTimeout1);
-		timeouts.put(type2, sessionTimeout2);
-		factory.setSessionTimeout(timeouts);
+		SessionConfig config = new SessionConfig();
+		config.setDefaultSessionTimeout(defaultSessionTimeout);
+		config.setSessionTimeoutForType(type1, sessionTimeout1);
+		config.setSessionTimeoutForType(type2, sessionTimeout2);
+		factory.setSessionConfig(config);
 	}
 
 	@Test
@@ -58,36 +55,36 @@ public class InVMSessionManagerTest {
 		
 		// 建立session
 		String sid1 = sm.createSession(session, type);
-		Session obj = sm.validateSession(sid1, type);
+		Session obj = sm.validateSession(sid1, type, true);
 		assertTrue(obj != null);
 		assertEquals(session.getId(), obj.getId());
 		
 		// 验证后刷新过期时间
 		Thread.sleep(sessionTimeout - 100);
-		obj = sm.validateSession(sid1, type);
+		obj = sm.validateSession(sid1, type, true);
 		assertTrue(obj != null);
 		
 		Thread.sleep(sessionTimeout - 100);
-		obj = sm.validateSession(sid1, type);
+		obj = sm.validateSession(sid1, type, true);
 		assertTrue(obj != null);
 		
 		// session过期
 		Thread.sleep(sessionTimeout);
-		obj = sm.validateSession(sid1, type);
+		obj = sm.validateSession(sid1, type, true);
 		assertTrue(obj == null);
 		
 		// 重新建立session
 		String sid2 = sm.createSession(session, type);
 		assertTrue(sid2 != null);
 		assertTrue(!sid2.equals(sid1));
-		obj = sm.validateSession(sid2, type);
+		obj = sm.validateSession(sid2, type, true);
 		assertTrue(obj != null);
 		assertEquals(session.getId(), obj.getId());
 		
 		// 删除session
 		Session removedSessionObj = sm.destroySession(sid2);
 		assertTrue(removedSessionObj != null && removedSessionObj.getId().equals(session.getId()));
-		obj = sm.validateSession(sid2, type);
+		obj = sm.validateSession(sid2, type, true);
 		assertTrue(obj == null);
 	}
 }

@@ -1,118 +1,113 @@
 package x.commons.session.impl;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.List;
 
 import x.commons.session.Session;
-import x.commons.session.SessionIDGenerator;
-import x.commons.session.SessionManager;
-import x.commons.session.SessionStore;
+import x.commons.session.SessionEventCallback.SessionEventType;
 
-public class DefaultSessionManager<T extends Session> implements
-		SessionManager<T> {
-
-	private int defaultSessionTimeout = 900; // 默认会话有效期：15分钟
-	private Map<Integer, Integer> sessionTimeout = new HashMap<Integer, Integer>();
-	private SessionIDGenerator sessionIDGenerator;
-	private SessionStore<T> sessionStore;
-
-	public void setDefaultSessionTimeout(int defaultSessionTimeout) {
-		this.defaultSessionTimeout = defaultSessionTimeout;
-	}
-
-	public void setSessionTimeout(Map<Integer, Integer> sessionTimeout) {
-		this.sessionTimeout = sessionTimeout;
-	}
-
-	public void setSessionIDGenerator(SessionIDGenerator sessionIDGenerator) {
-		this.sessionIDGenerator = sessionIDGenerator;
-	}
-
-	public void setSessionStore(SessionStore<T> sessionStore) {
-		this.sessionStore = sessionStore;
-	}
+public class DefaultSessionManager<T extends Session> extends AbstractSessionManager<T> {
 
 	@Override
-	public String createSession(T sessionObj, int type) throws Exception {
-		return this.doCreateSession(sessionObj,
-				this.getSessionTimeoutForType(type));
-	}
-
-	@Override
-	public boolean updateSession(T sessionObj, int type) throws Exception {
-		return this.doUpdateSession(sessionObj,
-				this.getSessionTimeoutForType(type));
-	}
-
-	@Override
-	public T validateSession(String sid, int type) throws Exception {
-		return this.doValidateSession(sid, this.getSessionTimeoutForType(type));
-	}
-
-	@Override
-	public String createSession(T sessionObj) throws Exception {
-		return this.doCreateSession(sessionObj, this.defaultSessionTimeout);
-	}
-
-	@Override
-	public boolean updateSession(T sessionObj) throws Exception {
-		return this.doUpdateSession(sessionObj, this.defaultSessionTimeout);
-	}
-
-	@Override
-	public T validateSession(String sid) throws Exception {
-		return this.doValidateSession(sid, this.defaultSessionTimeout);
-	}
-
-	@Override
-	public T destroySession(String sid) throws Exception {
-		if (sid == null || !this.sessionIDGenerator.verify(sid)) {
-			return null;
+	protected String doCreateSession(T sessionObj, int type)
+			throws Exception {
+		String group = sessionObj.getGroup();
+		String sid = super.sessionIDGenerator.generate();;
+		int ttl = super.sessionConfig.getSessionTimeoutForType(type);
+		int max = super.sessionConfig.getGroupMaxSessionNum();
+		if (max > 0) { // 有组内最大会话数目限制
+			if (super.sessionStore.getSessionCountInGroup(group) >= max) {
+				// 组内会话数目已达上限
+				List<String> currentSids = super.sessionStore.getSessionIdsInGroup(group);
+				String sidToEvict = super.sessionConfig.getGroupSessionEvictionPolicy().getSessionIdToEvict(currentSids, sid);
+				if (sid.equals(sidToEvict)) {
+					// 拒绝创建新会话
+					return null;
+				} else {
+					// 剔除已有会话
+					super.sessionStore.remove(sidToEvict);
+					if (super.sessionEventCallback != null) {
+						super.sessionEventCallback.onSessionEvent(SessionEventType.SESSION_EVICTED, group, sidToEvict);
+					}
+				}
+			}
 		}
-		return this.sessionStore.remove(sid);
-	}
-
-	private T validateSidAndGetSessionObj(String sid) throws Exception {
-		if (sid == null || !this.sessionIDGenerator.verify(sid)) {
-			return null;
+		sessionObj.setId(sid);
+		super.sessionStore.set(sessionObj, ttl);
+		if (super.sessionEventCallback != null) {
+			super.sessionEventCallback.onSessionEvent(SessionEventType.SESSION_CREATED, group, sid);
 		}
-		return this.sessionStore.get(sid);
+		return sid;
 	}
 
-	private int getSessionTimeoutForType(int type) {
-		Integer sessionTimeout = this.sessionTimeout.get(type);
-		if (sessionTimeout != null) {
-			return sessionTimeout.intValue();
-		} else {
-			return this.defaultSessionTimeout;
-		}
-	}
-
-	private String doCreateSession(T sessionObj, int timeout) throws Exception {
-		String sessionID = this.sessionIDGenerator.generate();
-		sessionObj.setId(sessionID);
-		this.sessionStore.put(sessionObj, timeout);
-		return sessionID;
-	}
-
-	private boolean doUpdateSession(T sessionObj, int timeout) throws Exception {
+	@Override
+	protected boolean doUpdateSession(T sessionObj, int type,
+			boolean refreshTTL) throws Exception {
 		if (sessionObj == null) {
 			return false;
 		}
-		if (this.validateSidAndGetSessionObj(sessionObj.getId()) == null) {
+		String group = sessionObj.getGroup();
+		if (!super.sessionIDGenerator.verify(sessionObj.getId())) {
 			return false;
 		}
-		this.sessionStore.put(sessionObj, timeout);
-		return true;
-	}
-
-	private T doValidateSession(String sid, int timeout) throws Exception {
-		T obj = this.validateSidAndGetSessionObj(sid);
-		if (obj != null) {
-			// 刷新过期时间
-			this.sessionStore.put(obj, timeout);
+		boolean ret = false;
+		if (refreshTTL) {
+			int ttl = super.sessionConfig.getSessionTimeoutForType(type);
+			ret = super.sessionStore.replaceAndRefreshTTL(sessionObj, ttl);
+		} else {
+			ret = super.sessionStore.replace(sessionObj);
 		}
-		return obj;
+		if (ret && super.sessionEventCallback != null) {
+			super.sessionEventCallback.onSessionEvent(SessionEventType.SESSION_UPDATED, group, sessionObj.getId());
+		}
+		return ret;
 	}
 
+	@Override
+	protected boolean doRefreshSessionTTL(String sid, int type)
+			throws Exception {
+		int ttl = super.sessionConfig.getSessionTimeoutForType(type);
+		return super.sessionStore.refreshTTL(sid, ttl);
+	}
+
+	@Override
+	protected T doValidateSession(String sid, int type,
+			boolean refreshTTL) throws Exception {
+		if (sid == null) {
+			return null;
+		}
+		if (!super.sessionIDGenerator.verify(sid)) {
+			return null;
+		}
+		
+		T sessionObj = null;
+		if (refreshTTL) {
+			int ttl = super.sessionConfig.getSessionTimeoutForType(type);
+			sessionObj = super.sessionStore.getAndRefreshTTL(sid, ttl);
+		} else {
+			sessionObj = super.sessionStore.get(sid);
+		}
+		
+		return sessionObj;
+	}
+
+	@Override
+	protected T doDestroySession(String sid) throws Exception {
+		if (sid == null || !this.sessionIDGenerator.verify(sid)) {
+			return null;
+		}
+		T ret = super.sessionStore.remove(sid);
+		if (ret != null && super.sessionEventCallback != null) {
+			super.sessionEventCallback.onSessionEvent(SessionEventType.SESSION_DESTROYED, ret.getGroup(), sid);
+		}
+		return ret;
+	}
+
+	@Override
+	protected boolean doDestroyGroup(String group) throws Exception {
+		boolean ret = this.sessionStore.removeGroup(group);
+		if (ret && super.sessionEventCallback != null) {
+			super.sessionEventCallback.onSessionEvent(SessionEventType.GROUP_DESTROYED, group, null);
+		}
+		return ret;
+	}
 }

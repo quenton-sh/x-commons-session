@@ -3,7 +3,7 @@ package x.commons.session.impl;
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
-import x.commons.memcached.MemcachedClient;
+import redis.clients.jedis.JedisPool;
 import x.commons.session.Session;
 import x.commons.session.SessionConfig;
 import x.commons.session.SessionDeserializer;
@@ -12,17 +12,19 @@ import x.commons.session.SessionManager;
 import x.commons.session.SessionManagerFactory;
 import x.commons.session.SessionSerializer;
 
-public class MemcachedSessionManagerFactory<T extends Session> implements
+public class RedisSessionManagerFactory<T extends Session> implements
 		SessionManagerFactory<T> {
 
-	private MemcachedClient memcachedClient;
+	private JedisPool jedisPool;
 	private SessionSerializer<T> sessionSerializer;
 	private SessionDeserializer<T> sessionDeserializer;
-	private byte[] desKey = null;
-	private SessionConfig sessionConfig = new SessionConfig();
+	private byte[] desKey; // optinal
+	private SessionConfig sessionConfig; // optinal
+	private String encoding; // optinal
+	private String namespace; // optinal
 
-	public void setMemcachedClient(MemcachedClient memcachedClient) {
-		this.memcachedClient = memcachedClient;
+	public void setJedisPool(JedisPool jedisPool) {
+		this.jedisPool = jedisPool;
 	}
 
 	public void setSessionSerializer(SessionSerializer<T> sessionSerializer) {
@@ -42,11 +44,22 @@ public class MemcachedSessionManagerFactory<T extends Session> implements
 		this.sessionConfig = sessionConfig;
 	}
 
+	public void setEncoding(String encoding) {
+		this.encoding = encoding;
+	}
+
+	public void setNamespace(String namespace) {
+		this.namespace = namespace;
+	}
+
 	@Override
 	public SessionManager<T> getSessionManager() {
-		MemcachedSessionStore<T> sessionStore = new MemcachedSessionStore<T>(memcachedClient,
+		RedisSessionStore<T> sessionStore = new RedisSessionStore<T>(
+				jedisPool,
 				sessionSerializer,
-				sessionDeserializer);
+				sessionDeserializer,
+				encoding,
+				namespace);
 
 		SessionIDGenerator sessionIDGenerator;
 		if (this.desKey != null) {
@@ -56,7 +69,9 @@ public class MemcachedSessionManagerFactory<T extends Session> implements
 		}
 
 		DefaultSessionManager<T> sessionManager = new DefaultSessionManager<T>();
-		sessionManager.setSessionConfig(this.sessionConfig);
+		if (this.sessionConfig != null) {
+			sessionManager.setSessionConfig(this.sessionConfig);
+		}
 		sessionManager.setSessionIDGenerator(sessionIDGenerator);
 		sessionManager.setSessionStore(sessionStore);
 		return sessionManager;

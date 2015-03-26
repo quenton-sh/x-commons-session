@@ -29,18 +29,13 @@
 		<dependency>
 			<groupId>x.commons</groupId>
 			<artifactId>x-commons-utils</artifactId>
-			<version>1.7</version>
+			<version>1.7.2</version>
 		</dependency>
 		<dependency>
 			<groupId>x.commons</groupId>
 			<artifactId>x-commons-memcached</artifactId>
 			<version>1.0</version>
 			<scope>provided</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.apache.commons</groupId>
-			<artifactId>commons-collections4</artifactId>
-			<version>4.0</version>
 		</dependency>
 		<dependency>
 			<groupId>commons-io</groupId>

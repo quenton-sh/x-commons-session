@@ -9,8 +9,8 @@ import org.apache.commons.io.IOUtils;
 
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.Response;
+import redis.clients.jedis.Transaction;
 import x.commons.session.Session;
 import x.commons.session.SessionDeserializer;
 import x.commons.session.SessionSerializer;
@@ -86,23 +86,28 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			byte[] sidKey = this.buildSessionIdKey(sessionObj.getId());
 			byte[] sessionValue = this.sessionSerializer.serialize(sessionObj);
 			byte[] groupKey = this.buildGroupkey(group);
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			byte[] groupValue = this.getRedisBytes(group);
 			
 			jedis = this.jedisPool.getResource();
 			
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// sid生效
-			p.hset(sidKey, hashSessionValueKey, sessionValue);
-			p.hset(sidKey, hashGroupKey, groupValue);
-			p.expire(sidKey, expireSecs);
+			t.hset(sidKey, hashSessionValueKey, sessionValue);
+			t.hset(sidKey, hashGroupKey, groupValue);
+			t.expire(sidKey, expireSecs);
+			
+			// 删除组内已过期的sid
+			t.zremrangeByScore(groupKey, 0, System.currentTimeMillis() - 1);
+			
 			// sid加入组
 			long expireAt = System.currentTimeMillis() + expireSecs * 1000;
-			p.zadd(groupKey, expireAt, groupMemValue);
-			// 延长组有效期
-			p.expire(groupKey, expireSecs);
+			t.zadd(groupKey, expireAt, sidValueInGroup);
 			
-			p.sync();
+			// 延长组有效期
+			t.expire(groupKey, expireSecs);
+			
+			t.exec();
 		} finally {
 			IOUtils.closeQuietly(jedis);
 		}
@@ -116,12 +121,12 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			String group = sessionObj.getGroup();
 			
 			byte[] sidKey = this.buildSessionIdKey(sessionObj.getId());
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, groupMemValue);
+			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, sidValueInGroup);
 			if (groupInRedis == null || !groupInRedis.equals(group)) {
 				return false;
 			}
@@ -144,30 +149,30 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			String group = sessionObj.getGroup();
 			
 			byte[] sidKey = this.buildSessionIdKey(sessionObj.getId());
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			byte[] groupKey = this.buildGroupkey(group);
 			byte[] groupValue = this.getRedisBytes(group);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, groupMemValue);
+			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, sidValueInGroup);
 			if (groupInRedis == null || !groupInRedis.equals(group)) {
 				return false;
 			}
 			
 			byte[] sessionValue = this.sessionSerializer.serialize(sessionObj);
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// 更新sid信息
-			p.hset(sidKey, hashSessionValueKey, sessionValue);
-			p.hset(sidKey, hashGroupKey, groupValue);
-			p.expire(sidKey, expireSecs);
+			t.hset(sidKey, hashSessionValueKey, sessionValue);
+			t.hset(sidKey, hashGroupKey, groupValue);
+			t.expire(sidKey, expireSecs);
 			// 更新组信息
 			long expireAt = System.currentTimeMillis() + expireSecs * 1000;
-			p.expire(groupKey, expireSecs);
-			p.zadd(groupKey, expireAt, groupMemValue);
+			t.expire(groupKey, expireSecs);
+			t.zadd(groupKey, expireAt, sidValueInGroup);
 			
-			p.sync();
+			t.exec();
 			return true;
 		} finally {
 			IOUtils.closeQuietly(jedis);
@@ -179,26 +184,26 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		Jedis jedis = null;
 		try {
 			byte[] sidKey = this.buildSessionIdKey(sid);
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, groupMemValue);
+			String groupInRedis = this.existsThenGetGroup(jedis, sidKey, sidValueInGroup);
 			if (groupInRedis == null) {
 				return false;
 			}
 			byte[] groupKey = this.buildGroupkey(groupInRedis);
 
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// 更新sid信息
-			p.expire(sidKey, expireSecs);
+			t.expire(sidKey, expireSecs);
 			// 更新组信息
 			long expireAt = System.currentTimeMillis() + expireSecs * 1000;
-			p.expire(groupKey, expireSecs);
-			p.zadd(groupKey, expireAt, groupMemValue);
+			t.expire(groupKey, expireSecs);
+			t.zadd(groupKey, expireAt, sidValueInGroup);
 			
-			p.sync();
+			t.exec();
 			return true;
 		} finally {
 			IOUtils.closeQuietly(jedis);
@@ -210,12 +215,12 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		Jedis jedis = null;
 		try {
 			byte[] sidKey = this.buildSessionIdKey(sid);
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			SessionHashObj obj = this.existsThenGet(jedis, sidKey, groupMemValue);
+			SessionHashObj obj = this.existsThenGet(jedis, sidKey, sidValueInGroup);
 			if (obj == null) {
 				return null;
 			}
@@ -230,26 +235,26 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		Jedis jedis = null;
 		try {
 			byte[] sidKey = this.buildSessionIdKey(sid);
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			SessionHashObj obj = this.existsThenGet(jedis, sidKey, groupMemValue);
+			SessionHashObj obj = this.existsThenGet(jedis, sidKey, sidValueInGroup);
 			if (obj == null) {
 				return null;
 			}
 			byte[] groupKey = this.buildGroupkey(obj.group);
 			
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// 更新sid信息
-			p.expire(sidKey, expireSecs);
+			t.expire(sidKey, expireSecs);
 			// 更新组信息
 			long expireAt = System.currentTimeMillis() + expireSecs * 1000;
-			p.expire(groupKey, expireSecs);
-			p.zadd(groupKey, expireAt, groupMemValue);
+			t.expire(groupKey, expireSecs);
+			t.zadd(groupKey, expireAt, sidValueInGroup);
 			
-			p.sync();
+			t.exec();
 			return this.sessionDeserializer.deserialize(obj.sessionValue);
 		} finally {
 			IOUtils.closeQuietly(jedis);
@@ -261,21 +266,21 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		Jedis jedis = null;
 		try {
 			byte[] sidKey = this.buildSessionIdKey(sid);
-			byte[] groupMemValue = this.getRedisBytes(sid);
+			byte[] sidValueInGroup = this.getRedisBytes(sid);
 			
 			jedis = this.jedisPool.getResource();
 			
 			// 检查sid、组是否存在，sid是否属于组
-			SessionHashObj obj = this.existsThenGet(jedis, sidKey, groupMemValue);
+			SessionHashObj obj = this.existsThenGet(jedis, sidKey, sidValueInGroup);
 			if (obj == null) {
 				return null;
 			}
 			byte[] groupKey = this.buildGroupkey(obj.group);
 			
-			Pipeline p = jedis.pipelined();
-			p.del(sidKey);
-			p.zrem(groupKey, groupMemValue);
-			p.sync();
+			Transaction t = jedis.multi();
+			t.del(sidKey); // 删除sid（使会话失效）
+			t.zrem(groupKey, sidValueInGroup); // 从组中删除sid
+			t.exec();
 			
 			return this.sessionDeserializer.deserialize(obj.sessionValue);
 		} finally {
@@ -290,12 +295,9 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			byte[] groupKey = this.buildGroupkey(group);
 			jedis = this.jedisPool.getResource();
 			
-			Pipeline p = jedis.pipelined();
-			Response<Boolean> existsRes = p.exists(groupKey);
-			p.del(groupKey);
-			p.sync();
+			Long l = jedis.del(groupKey);
 			
-			return existsRes != null && existsRes.get().booleanValue();
+			return l != null && l.intValue() > 0;
 		} finally {
 			IOUtils.closeQuietly(jedis);
 		}
@@ -310,11 +312,12 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			
 			jedis = this.jedisPool.getResource();
 			
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// 删除组内已过期的sid
-			p.zremrangeByScore(groupKey, 0, now - 1);
-			Response<Long> zcountRes = p.zcount(groupKey, now, Long.MAX_VALUE);
-			p.sync();
+			t.zremrangeByScore(groupKey, 0, now - 1);
+			// 获取组内未过期的sid数量
+			Response<Long> zcountRes = t.zcount(groupKey, now, Long.MAX_VALUE);
+			t.exec();
 			
 			return zcountRes == null ? 0 : zcountRes.get().intValue();
 		} finally {
@@ -332,19 +335,20 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 			
 			jedis = this.jedisPool.getResource();
 			
-			Pipeline p = jedis.pipelined();
+			Transaction t = jedis.multi();
 			// 删除组内已过期的sid
-			p.zremrangeByScore(groupKey, 0, now - 1);
-			Response<Set<byte[]>> zrangeRes = p.zrangeByScore(groupKey, now, Long.MAX_VALUE);
-			p.sync();
+			t.zremrangeByScore(groupKey, 0, now - 1);
+			// 获取组内未过期的sid集合
+			Response<Set<byte[]>> zrangeRes = t.zrangeByScore(groupKey, now, Long.MAX_VALUE);
+			t.exec();
 			
 			Set<byte[]> set =  zrangeRes == null ? null : zrangeRes.get();
 			if (set == null) {
 				return null;
 			}
 			List<String> list = new ArrayList<String>(set.size());
-			for (byte[] groupMemValue : set) {
-				list.add(this.parseRedisBytes(groupMemValue));
+			for (byte[] sidValueInGroup : set) {
+				list.add(this.parseRedisBytes(sidValueInGroup));
 			}
 			return list;
 		} finally {
@@ -352,7 +356,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		}
 	}
 	
-	private String existsThenGetGroup(Jedis jedis, byte[] sidKey, byte[] groupMemValue) throws Exception {
+	private String existsThenGetGroup(Jedis jedis, byte[] sidKey, byte[] sidValueInGroup) throws Exception {
 		byte[] groupBytes = jedis.hget(sidKey, this.hashGroupKey);
 		if (groupBytes == null) {
 			// sid不存在
@@ -360,38 +364,38 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 		}
 		String group = this.parseRedisBytes(groupBytes);
 		byte[] groupKey = this.buildGroupkey(group);
-		Double d = jedis.zscore(groupKey, groupMemValue);
+		Double d = jedis.zscore(groupKey, sidValueInGroup);
 		if (d == null) {
 			// 组信息不存在
 			return null;
 		}
 		if (d.longValue() < System.currentTimeMillis()) {
-			// 组信息已过期
-			jedis.zrem(groupKey, groupMemValue);
+			// 组内当前sid信息已过期
+			jedis.zrem(groupKey, sidValueInGroup);
 			return null;
 		}
 		return group;
 	}
 	
-	private SessionHashObj existsThenGet(Jedis jedis, byte[] sidKey, byte[] groupMemValue) throws Exception {
-		Pipeline p = jedis.pipelined();
-		Response<byte[]> groupRes = p.hget(sidKey, this.hashGroupKey);
-		Response<byte[]> sessionValueRes = p.hget(sidKey, this.hashSessionValueKey);
-		p.sync();
+	private SessionHashObj existsThenGet(Jedis jedis, byte[] sidKey, byte[] sidValueInGroup) throws Exception {
+		Transaction t = jedis.multi();
+		Response<byte[]> groupRes = t.hget(sidKey, this.hashGroupKey);
+		Response<byte[]> sessionValueRes = t.hget(sidKey, this.hashSessionValueKey);
+		t.exec();
 		if (groupRes == null || groupRes.get() == null || sessionValueRes == null || sessionValueRes.get() == null) {
 			// sid不存在
 			return null;
 		}
 		String group = this.parseRedisBytes(groupRes.get());
 		byte[] groupKey = this.buildGroupkey(group);
-		Double d = jedis.zscore(groupKey, groupMemValue);
+		Double d = jedis.zscore(groupKey, sidValueInGroup);
 		if (d == null) {
 			// 组信息不存在
 			return null;
 		}
 		if (d.longValue() < System.currentTimeMillis()) {
-			// 组信息已过期
-			jedis.zrem(groupKey, groupMemValue);
+			// 组内当前sid信息已过期
+			jedis.zrem(groupKey, sidValueInGroup);
 			return null;
 		}
 		return new SessionHashObj(group, sessionValueRes.get());

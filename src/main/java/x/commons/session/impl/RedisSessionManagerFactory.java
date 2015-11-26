@@ -22,6 +22,8 @@ public class RedisSessionManagerFactory<T extends Session> implements
 	private SessionConfig sessionConfig; // optinal
 	private String encoding; // optinal
 	private String namespace; // optinal
+	private int failRetryCount = 1; // 失败重试次数
+	private int failRetryIntervalMillis = 1000; // 失败多次重试之间的间隔时间（毫秒） 
 
 	public void setJedisPool(JedisPool jedisPool) {
 		this.jedisPool = jedisPool;
@@ -51,6 +53,14 @@ public class RedisSessionManagerFactory<T extends Session> implements
 	public void setNamespace(String namespace) {
 		this.namespace = namespace;
 	}
+	
+	public void setFailRetryCount(int failRetryCount) {
+		this.failRetryCount = failRetryCount;
+	}
+
+	public void setFailRetryIntervalMillis(int failRetryIntervalMillis) {
+		this.failRetryIntervalMillis = failRetryIntervalMillis;
+	}
 
 	@Override
 	public SessionManager<T> getSessionManager() {
@@ -59,7 +69,9 @@ public class RedisSessionManagerFactory<T extends Session> implements
 				sessionSerializer,
 				sessionDeserializer,
 				encoding,
-				namespace);
+				namespace,
+				failRetryCount,
+				failRetryIntervalMillis);
 
 		SessionIDGenerator sessionIDGenerator;
 		if (this.desKey != null) {

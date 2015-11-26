@@ -35,7 +35,7 @@
 		<dependency>
 			<groupId>x.commons</groupId>
 			<artifactId>x-commons-utils</artifactId>
-			<version>1.7.2</version>
+			<version>1.11</version>
 		</dependency>
 		<dependency>
 			<groupId>x.commons</groupId>

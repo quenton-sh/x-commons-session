@@ -1,5 +1,7 @@
 package x.commons.session.impl;
 
+import java.util.Map;
+
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
@@ -11,18 +13,36 @@ import x.commons.session.SessionIDGenerator;
 import x.commons.session.SessionManager;
 import x.commons.session.SessionManagerFactory;
 import x.commons.session.SessionSerializer;
+import x.commons.util.Provider;
 
 public class MemcachedSessionManagerFactory<T extends Session> implements
 		SessionManagerFactory<T> {
 
-	private MemcachedClient memcachedClient;
+	private Provider<MemcachedClient> memcachedClientProvider;
 	private SessionSerializer<T> sessionSerializer;
 	private SessionDeserializer<T> sessionDeserializer;
 	private byte[] desKey = null;
 	private SessionConfig sessionConfig = new SessionConfig();
 
-	public void setMemcachedClient(MemcachedClient memcachedClient) {
-		this.memcachedClient = memcachedClient;
+	public void setMemcachedClient(final MemcachedClient memcachedClient) {
+		this.memcachedClientProvider = new Provider<MemcachedClient>() {
+			@Override
+			public MemcachedClient get() {
+				return memcachedClient;
+			}
+			@Override
+			public MemcachedClient get(Object... arg0) {
+				return memcachedClient;
+			}
+			@Override
+			public MemcachedClient get(Map<String, Object> arg0) {
+				return memcachedClient;
+			}
+		};
+	}
+
+	public void setMemcachedClientProvider(Provider<MemcachedClient> memcachedClientProvider) {
+		this.memcachedClientProvider = memcachedClientProvider;
 	}
 
 	public void setSessionSerializer(SessionSerializer<T> sessionSerializer) {
@@ -44,7 +64,7 @@ public class MemcachedSessionManagerFactory<T extends Session> implements
 
 	@Override
 	public SessionManager<T> getSessionManager() {
-		MemcachedSessionStore<T> sessionStore = new MemcachedSessionStore<T>(memcachedClient,
+		MemcachedSessionStore<T> sessionStore = new MemcachedSessionStore<T>(memcachedClientProvider,
 				sessionSerializer,
 				sessionDeserializer);
 

@@ -1,9 +1,12 @@
 package x.commons.session.impl;
 
+import java.util.Map;
+
 import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.binary.Hex;
 
-import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.Jedis;
+import redis.clients.util.Pool;
 import x.commons.session.Session;
 import x.commons.session.SessionConfig;
 import x.commons.session.SessionDeserializer;
@@ -11,11 +14,12 @@ import x.commons.session.SessionIDGenerator;
 import x.commons.session.SessionManager;
 import x.commons.session.SessionManagerFactory;
 import x.commons.session.SessionSerializer;
+import x.commons.util.Provider;
 
 public class RedisSessionManagerFactory<T extends Session> implements
 		SessionManagerFactory<T> {
 
-	private JedisPool jedisPool;
+	private Provider<Pool<Jedis>> jedisPoolProvider;
 	private SessionSerializer<T> sessionSerializer;
 	private SessionDeserializer<T> sessionDeserializer;
 	private byte[] desKey; // optinal
@@ -25,8 +29,25 @@ public class RedisSessionManagerFactory<T extends Session> implements
 	private int failRetryCount = 1; // 失败重试次数
 	private int failRetryIntervalMillis = 1000; // 失败多次重试之间的间隔时间（毫秒） 
 
-	public void setJedisPool(JedisPool jedisPool) {
-		this.jedisPool = jedisPool;
+	public void setJedisPool(final Pool<Jedis> jedisPool) {
+		this.jedisPoolProvider = new Provider<Pool<Jedis>>() {
+			@Override
+			public Pool<Jedis> get() {
+				return jedisPool;
+			}
+			@Override
+			public Pool<Jedis> get(Object... arg0) {
+				return jedisPool;
+			}
+			@Override
+			public Pool<Jedis> get(Map<String, Object> arg0) {
+				return jedisPool;
+			}
+		};
+	}
+	
+	public void setJedisPoolProvider(Provider<Pool<Jedis>> jedisPoolProvider) {
+		this.jedisPoolProvider = jedisPoolProvider;
 	}
 
 	public void setSessionSerializer(SessionSerializer<T> sessionSerializer) {
@@ -65,7 +86,7 @@ public class RedisSessionManagerFactory<T extends Session> implements
 	@Override
 	public SessionManager<T> getSessionManager() {
 		RedisSessionStore<T> sessionStore = new RedisSessionStore<T>(
-				jedisPool,
+				jedisPoolProvider,
 				sessionSerializer,
 				sessionDeserializer,
 				encoding,

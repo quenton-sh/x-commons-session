@@ -3,18 +3,20 @@ package x.commons.session.impl;
 import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
 import org.apache.commons.io.IOUtils;
 
 import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.Response;
 import redis.clients.jedis.Transaction;
+import redis.clients.util.Pool;
 import x.commons.session.Session;
 import x.commons.session.SessionDeserializer;
 import x.commons.session.SessionSerializer;
+import x.commons.util.Provider;
 import x.commons.util.failover.RetrySupport;
 
 /**
@@ -27,7 +29,7 @@ import x.commons.util.failover.RetrySupport;
  */
 public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T> {
 	
-	private final JedisPool jedisPool;
+	private final Provider<Pool<Jedis>> jedisPoolProvider;
 	private final SessionSerializer<T> sessionSerializer;
 	private final SessionDeserializer<T> sessionDeserializer;
 	private final String encoding;
@@ -39,13 +41,35 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 	private final byte[] hashSessionValueKey;
 	private final byte[] hashGroupKey;
 	
-	public RedisSessionStore(JedisPool jedisPool,
+	public RedisSessionStore(final Pool<Jedis> jedisPool,
+			SessionSerializer<T> sessionSerializer,
+			SessionDeserializer<T> sessionDeserializer, String encoding,
+			String namespace,
+			int failRetryCount, int failRetryIntervalMillis) {
+		this(new Provider<Pool<Jedis>>() {
+			@Override
+			public Pool<Jedis> get() {
+				return jedisPool;
+			}
+			@Override
+			public Pool<Jedis> get(Object... arg0) {
+				return jedisPool;
+			}
+			@Override
+			public Pool<Jedis> get(Map<String, Object> arg0) {
+				return jedisPool;
+			}
+		}, sessionSerializer, sessionDeserializer, encoding, namespace,
+				failRetryCount, failRetryIntervalMillis);
+	}
+	
+	public RedisSessionStore(Provider<Pool<Jedis>> jedisPoolProvider,
 			SessionSerializer<T> sessionSerializer,
 			SessionDeserializer<T> sessionDeserializer, String encoding,
 			String namespace,
 			int failRetryCount, int failRetryIntervalMillis) {
 		super();
-		this.jedisPool = jedisPool;
+		this.jedisPoolProvider = jedisPoolProvider;
 		this.sessionSerializer = sessionSerializer;
 		this.sessionDeserializer = sessionDeserializer;
 		if (encoding != null) {
@@ -106,7 +130,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							byte[] groupValue = getRedisBytes(group);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							Transaction t = jedis.multi();
 							// sid生效
@@ -147,7 +171,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidKey = buildSessionIdKey(sessionObj.getId());
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							String groupInRedis = existsThenGetGroup(jedis, sidKey, sidValueInGroup);
@@ -183,7 +207,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] groupKey = buildGroupkey(group);
 							byte[] groupValue = getRedisBytes(group);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							String groupInRedis = existsThenGetGroup(jedis, sidKey, sidValueInGroup);
@@ -223,7 +247,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidKey = buildSessionIdKey(sid);
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							String groupInRedis = existsThenGetGroup(jedis, sidKey, sidValueInGroup);
@@ -260,7 +284,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidKey = buildSessionIdKey(sid);
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							SessionHashObj obj = existsThenGet(jedis, sidKey, sidValueInGroup);
@@ -286,7 +310,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidKey = buildSessionIdKey(sid);
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							SessionHashObj obj = existsThenGet(jedis, sidKey, sidValueInGroup);
@@ -323,7 +347,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							byte[] sidKey = buildSessionIdKey(sid);
 							byte[] sidValueInGroup = getRedisBytes(sid);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							// 检查sid、组是否存在，sid是否属于组
 							SessionHashObj obj = existsThenGet(jedis, sidKey, sidValueInGroup);
@@ -354,7 +378,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 						Jedis jedis = null;
 						try {
 							byte[] groupKey = buildGroupkey(group);
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							Long l = jedis.del(groupKey);
 							
@@ -377,7 +401,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							long now = System.currentTimeMillis();
 							byte[] groupKey = buildGroupkey(group);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							Transaction t = jedis.multi();
 							// 删除组内已过期的sid
@@ -406,7 +430,7 @@ public class RedisSessionStore<T extends Session> extends AbstractSessionStore<T
 							long now = System.currentTimeMillis();
 							byte[] groupKey = buildGroupkey(group);
 							
-							jedis = jedisPool.getResource();
+							jedis = jedisPoolProvider.get().getResource();
 							
 							Transaction t = jedis.multi();
 							// 删除组内已过期的sid

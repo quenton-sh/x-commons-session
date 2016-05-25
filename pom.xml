@@ -5,13 +5,13 @@
 
 	<groupId>x.commons</groupId>
 	<artifactId>x-commons-session</artifactId>
-	<version>2.2-SNAPSHOT</version>
+	<version>2.2</version>
 	<packaging>jar</packaging>
 
 	<scm>
 		<connection>scm:git:https://github.com/quenton-sh/x-commons-session.git</connection>
 		<developerConnection>scm:git:https://github.com/quenton-sh/x-commons-session.git</developerConnection>
-		<tag>HEAD</tag>
+		<tag>2.2</tag>
 	</scm>
 
 	<properties>

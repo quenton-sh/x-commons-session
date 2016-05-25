@@ -4,12 +4,15 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 import org.junit.BeforeClass;
+import org.junit.FixMethodOrder;
 import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
 import x.commons.session.Session;
 import x.commons.session.SessionConfig;
 import x.commons.session.SessionManager;
 
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class InVMSessionManagerTest {
 	
 	private static InVMSessionManagerFactory<Session> factory = null;
